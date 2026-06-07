@@ -1,0 +1,575 @@
+@import url("https://use.typekit.net/qnj1ksn.css");
+@import "tailwindcss";
+
+/* Modern blue palette — cool off-white paper, deep navy ink, and a
+   punchy cornflower-blue accent (the bright SaaS-blue from the
+   reference). Dark sections invert to a deep navy. The accent
+   gradient runs from deep blue (--accent-deep) through cornflower
+   (--accent) up to a soft sky tint (--accent-2). */
+:root {
+  --bg: #F7F9FC;
+  --bg-warm: #EAF0F8;
+  --paper: #FFFFFF;
+  --fg: #1A2238;
+  --ink: #0B1326;
+  --ink-warm: #0F1A2E;
+  --fg-muted: #6E7990;
+  --fg-on-dark: #EAF0F8;
+  --line: #DDE4EE;
+  --line-strong: #BFC9DA;
+  --accent: #3B7BF5;
+  --accent-2: #7FA9F7;
+  --accent-deep: #1E4DB8;
+  --accent-soft: #DDE9FE;
+}
+
+@theme inline {
+  --color-background: var(--bg);
+  --color-bg-warm: var(--bg-warm);
+  --color-foreground: var(--fg);
+  --color-muted: var(--fg-muted);
+  --color-on-dark: var(--fg-on-dark);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-accent: var(--accent);
+  --color-accent-2: var(--accent-2);
+  --color-accent-deep: var(--accent-deep);
+  --color-accent-soft: var(--accent-soft);
+  --color-paper: var(--paper);
+  --color-ink: var(--ink);
+  --color-ink-warm: var(--ink-warm);
+  --font-sans: var(--font-rubik), var(--font-sans-body), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-mono-tech), ui-monospace, monospace;
+  --font-serif: var(--font-italic-serif), ui-serif, Georgia, serif;
+  --font-display: var(--font-rubik), var(--font-display-grotesque), var(--font-sans-body), ui-sans-serif, system-ui, sans-serif;
+  --font-discovery: var(--font-rubik), var(--font-discovery-tech), var(--font-display-grotesque), ui-sans-serif, system-ui, sans-serif;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+html,
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-discovery);
+  font-feature-settings: "ss01", "ss02", "calt", "kern";
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* Subtle initial page-load fade — applied to <main> so every page entrance
+   reads as a deliberate moment rather than a hard flash. */
+@keyframes page-enter {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.page-enter {
+  animation: page-enter 0.65s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-discovery);
+  letter-spacing: -0.028em;
+  font-feature-settings: "ss01", "ss02", "calt", "kern";
+}
+
+::selection {
+  background: var(--accent);
+  color: var(--bg);
+}
+
+/* Accent emphasis — Fraunces (upright, NOT italic). Modern variable
+   serif with personality and edge: bold verticals, gentle curves,
+   slightly distinctive character. Contrasts the Bricolage Grotesque
+   display font on titles without the cursive lean. Coloured with the
+   cornflower `--accent` so the word still pops as a bright blue moment.
+   Class name kept as `serif-italic` to avoid touching every consumer;
+   it's the styling that changed, not the slot. */
+.serif-italic {
+  font-family: var(--font-discovery);
+  font-style: normal;
+  font-weight: 500;
+  letter-spacing: -0.022em;
+  font-feature-settings: "ss01", "ss02", "calt", "kern";
+  color: var(--accent);
+}
+
+@keyframes marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+.animate-marquee {
+  animation: marquee 38s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-marquee {
+    animation: none !important;
+  }
+}
+
+/* Subtle film grain — `multiply` blend so it darkens the warm paper
+   surface for a print-like texture. Disabled on small screens —
+   `mix-blend-mode` is one of the most expensive things mobile browsers
+   can do over a full-viewport fixed element. */
+.grain::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0.04;
+  mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+}
+@media (max-width: 767px) {
+  .grain::before { display: none; }
+}
+
+/* ─── Accessibility modes (driven by AccessibilityWidget) ──────────────── */
+
+/* High contrast — bumps saturation/contrast on text-heavy surfaces while
+   keeping images true. */
+.a11y-high-contrast {
+  filter: contrast(1.25);
+}
+.a11y-high-contrast img,
+.a11y-high-contrast video,
+.a11y-high-contrast canvas,
+.a11y-high-contrast svg image {
+  filter: contrast(1) saturate(1);
+}
+
+/* Reduce motion — short-circuits every CSS animation/transition. Sites
+   already obey `prefers-reduced-motion` system setting, but this gives
+   the user an explicit opt-in/out independent of the OS. */
+.a11y-reduce-motion *,
+.a11y-reduce-motion *::before,
+.a11y-reduce-motion *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+  scroll-behavior: auto !important;
+}
+
+/* Large cursor — replaces the OS cursor with an enlarged blue arrow so
+   low-vision users can track the pointer easily. SVG embedded as data
+   URI; the "2 2" suffix sets the click-point hotspot at the tip. */
+.a11y-large-cursor,
+.a11y-large-cursor * {
+  cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='40' height='40' viewBox='0 0 24 24'><path d='M3 2l5 16 3-7 7-3z' fill='%231E3A8A' stroke='%23ffffff' stroke-width='1.5' stroke-linejoin='round'/></svg>") 2 2, auto !important;
+}
+.a11y-large-cursor a,
+.a11y-large-cursor button,
+.a11y-large-cursor [role="button"],
+.a11y-large-cursor input[type="submit"],
+.a11y-large-cursor input[type="button"] {
+  cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='40' height='40' viewBox='0 0 24 24'><path d='M9 11V4a1.5 1.5 0 0 1 3 0v7m0-2a1.5 1.5 0 0 1 3 0v3m0-1a1.5 1.5 0 0 1 3 0v3m0-1a1.5 1.5 0 0 1 3 0v6a4 4 0 0 1-4 4h-3.5a4 4 0 0 1-3.5-2L6 14a1.5 1.5 0 0 1 2.5-1.5L9 13' fill='%231E3A8A' stroke='%23ffffff' stroke-width='1.2' stroke-linejoin='round'/></svg>") 12 6, pointer !important;
+}
+
+/* Highlight links — amber pill background + emphasised underline on
+   every <a>. Strong visual cue that the element is interactive. */
+.a11y-highlight-links a {
+  background-color: #FEF3C7 !important;
+  color: #78350F !important;
+  text-decoration: underline !important;
+  text-decoration-thickness: 2px !important;
+  text-underline-offset: 2px !important;
+  border-radius: 3px !important;
+  padding: 1px 4px !important;
+  font-weight: 600 !important;
+}
+
+/* Readable font — swap site fonts for a high-legibility sans-serif with
+   relaxed spacing. Improves reading comfort for dyslexic / low-vision
+   users without changing the layout structure. */
+.a11y-readable-font,
+.a11y-readable-font * {
+  font-family: Verdana, Arial, sans-serif !important;
+  letter-spacing: 0.04em !important;
+  word-spacing: 0.16em !important;
+  line-height: 1.7 !important;
+}
+
+/* Focus mode — dims decorative imagery and aria-hidden ornaments so the
+   primary reading content stays prominent. Interactive content and
+   labelled imagery keep full strength. */
+.a11y-focus-mode img,
+.a11y-focus-mode video,
+.a11y-focus-mode canvas {
+  filter: grayscale(0.5) opacity(0.65) !important;
+}
+.a11y-focus-mode [aria-hidden="true"],
+.a11y-focus-mode svg:not([aria-label]):not([role="img"]) {
+  opacity: 0.35 !important;
+}
+
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.625rem;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+
+/* RTL: mirror diagonal "go forward" arrows so they point up-left
+   (forward in Hebrew reading direction) instead of up-right. Targets
+   the lucide ArrowUpRight component and the inline SVG used inside
+   the brand CTA pills. */
+[dir="rtl"] .lucide-arrow-up-right,
+[dir="rtl"] .btn-shine svg,
+[dir="rtl"] .btn-violet svg {
+  transform: scaleX(-1);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}
+
+/* ─── Custom CSS polish ──────────────────────────────────────────────────── */
+
+/* Underline that draws on hover (links, nav). */
+.link-underline {
+  background-image: linear-gradient(currentColor, currentColor);
+  background-size: 0% 1px;
+  background-repeat: no-repeat;
+  background-position: 0 100%;
+  transition: background-size 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.link-underline:hover,
+.link-underline:focus-visible {
+  background-size: 100% 1px;
+}
+
+/* Diagonal shine sweep on primary CTAs. */
+.btn-shine {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+}
+.btn-shine::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    115deg,
+    transparent 30%,
+    rgba(255, 255, 255, 0.28) 45%,
+    rgba(255, 255, 255, 0.42) 50%,
+    rgba(255, 255, 255, 0.28) 55%,
+    transparent 70%
+  );
+  transform: translateX(-110%);
+  transition: transform 0.85s cubic-bezier(0.22, 1, 0.36, 1);
+  z-index: 0;
+}
+.btn-shine:hover::before,
+.btn-shine:focus-visible::before {
+  transform: translateX(110%);
+}
+.btn-shine > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* Forest gradient CTA — the primary button surface. Warm cream text on
+   a 3-stop accent → deep-forest gradient. Both ends are dark enough
+   that light text reads cleanly (8:1 on accent, 10:1 on deep). Hover
+   lifts slightly and brightens both the gradient and the surround. */
+.btn-violet {
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--accent) 100%, white 6%) 0%,
+    var(--accent) 55%,
+    var(--accent-deep) 100%
+  );
+  color: var(--paper);
+  box-shadow:
+    0 10px 28px -10px color-mix(in srgb, var(--accent) 60%, transparent),
+    0 2px 8px -2px color-mix(in srgb, var(--accent-deep) 40%, transparent),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.3);
+  transition:
+    box-shadow 0.4s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.3s cubic-bezier(0.22, 1, 0.36, 1),
+    background 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+}
+.btn-violet:hover,
+.btn-violet:focus-visible {
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--accent) 100%, white 18%) 0%,
+    var(--accent) 55%,
+    color-mix(in srgb, var(--accent-deep) 100%, var(--accent) 25%) 100%
+  );
+  transform: translateY(-1.5px);
+  box-shadow:
+    0 18px 40px -12px color-mix(in srgb, var(--accent) 78%, transparent),
+    0 4px 12px -2px color-mix(in srgb, var(--accent-deep) 50%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.5);
+}
+.btn-violet:active {
+  transform: translateY(-0.5px);
+  transition-duration: 0.1s;
+}
+
+/* Section dividers — top hairline animates in on view-enter. */
+.divider-draw {
+  position: relative;
+}
+.divider-draw::before {
+  content: "";
+  position: absolute;
+  top: -1px;
+  left: 0;
+  height: 1px;
+  width: 0%;
+  background: linear-gradient(90deg, transparent, var(--accent) 50%, transparent);
+  transition: width 0.9s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.divider-draw[data-in-view="true"]::before {
+  width: 100%;
+}
+
+/* ─── Aurora gradient backdrop — violet + fuchsia radial washes ─────────
+   Each variant positions its primary glow differently so consecutive
+   sections feel related but not identical when scrolled past in sequence. */
+.aurora-bg {
+  background:
+    radial-gradient(900px 600px at 20% 0%, color-mix(in srgb, var(--accent) 22%, transparent) 0%, transparent 60%),
+    radial-gradient(800px 500px at 90% 30%, color-mix(in srgb, var(--accent-2) 18%, transparent) 0%, transparent 60%),
+    radial-gradient(700px 400px at 50% 100%, color-mix(in srgb, var(--accent) 12%, transparent) 0%, transparent 65%);
+  background-size: 200% 200%, 220% 220%, 250% 250%;
+  animation: aurora-shift 22s ease-in-out infinite;
+}
+
+/* Variant: top-right primary glow */
+.aurora-bg-tr {
+  background:
+    radial-gradient(900px 600px at 85% 0%, color-mix(in srgb, var(--accent) 18%, transparent) 0%, transparent 60%),
+    radial-gradient(800px 500px at 15% 40%, color-mix(in srgb, var(--accent-2) 14%, transparent) 0%, transparent 60%),
+    radial-gradient(700px 400px at 60% 100%, color-mix(in srgb, var(--accent) 10%, transparent) 0%, transparent 65%);
+  background-size: 200% 200%, 220% 220%, 250% 250%;
+  animation: aurora-shift 26s ease-in-out infinite reverse;
+}
+
+/* Variant: bottom-center primary glow */
+.aurora-bg-bc {
+  background:
+    radial-gradient(900px 600px at 50% 100%, color-mix(in srgb, var(--accent) 18%, transparent) 0%, transparent 60%),
+    radial-gradient(800px 500px at 10% 25%, color-mix(in srgb, var(--accent-2) 12%, transparent) 0%, transparent 60%),
+    radial-gradient(700px 400px at 90% 30%, color-mix(in srgb, var(--accent) 10%, transparent) 0%, transparent 65%);
+  background-size: 200% 200%, 220% 220%, 250% 250%;
+  animation: aurora-shift 28s ease-in-out infinite;
+}
+
+/* Variant: bottom-left primary glow */
+.aurora-bg-bl {
+  background:
+    radial-gradient(900px 600px at 15% 100%, color-mix(in srgb, var(--accent) 18%, transparent) 0%, transparent 60%),
+    radial-gradient(800px 500px at 85% 35%, color-mix(in srgb, var(--accent-2) 14%, transparent) 0%, transparent 60%),
+    radial-gradient(700px 400px at 50% 10%, color-mix(in srgb, var(--accent) 10%, transparent) 0%, transparent 65%);
+  background-size: 200% 200%, 220% 220%, 250% 250%;
+  animation: aurora-shift 30s ease-in-out infinite reverse;
+}
+
+@keyframes aurora-shift {
+  0%, 100% { background-position: 0% 0%, 100% 30%, 50% 100%; }
+  50%      { background-position: 30% 20%, 70% 50%, 60% 80%; }
+}
+
+/* ─── Glass surface for cards over 3D scenes ─────────────────────────────── */
+.glass {
+  background: color-mix(in srgb, var(--paper) 60%, transparent);
+  backdrop-filter: blur(16px) saturate(1.4);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+/* ─── Gradient border (CSS-only, no extra DOM) ───────────────────────────── */
+.grad-border {
+  position: relative;
+  isolation: isolate;
+}
+.grad-border::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  padding: 1px;
+  border-radius: inherit;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2) 50%, transparent 80%);
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+          mask-composite: exclude;
+  pointer-events: none;
+}
+
+/* ─── Embossed depth on process numbers (now with violet bias) ──────────── */
+.stamp-3d {
+  text-shadow:
+    1px 1px 0 color-mix(in srgb, var(--accent) 12%, transparent),
+    2px 2px 0 color-mix(in srgb, var(--accent) 9%, transparent),
+    3px 3px 0 color-mix(in srgb, var(--accent) 6%, transparent),
+    4px 4px 0 color-mix(in srgb, var(--accent) 4%, transparent);
+}
+
+/* ─── Soft accent glow on interactive surfaces ─────────────────────────── */
+.glow-hover {
+  transition: box-shadow 0.5s cubic-bezier(0.22, 1, 0.36, 1),
+              transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.glow-hover:hover {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent),
+    0 20px 60px -20px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+/* ─── One-shot accent glow when an element enters view ──────────────────── */
+.cinema-glow {
+  border-radius: inherit;
+}
+.cinema-glow[data-in-view="true"] {
+  animation: cinema-glow 1.6s cubic-bezier(0.22, 1, 0.36, 1) 0.25s 1 forwards;
+}
+@keyframes cinema-glow {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 0%, transparent);
+  }
+  45% {
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent),
+      0 18px 48px -16px color-mix(in srgb, var(--accent) 45%, transparent);
+  }
+  100% {
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--accent) 0%, transparent),
+      0 0 0 0 color-mix(in srgb, var(--accent) 0%, transparent);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cinema-glow[data-in-view="true"] {
+    animation: none;
+  }
+}
+
+/* ─── Logo painted via mask + currentColor ──────────────────────────────── */
+/* The /clix-logo.png is a transparent silhouette. Using it as a mask lets
+   us paint it via background-color or currentColor, so a single asset works
+   on light or dark surfaces and can be tinted on hover. */
+.logo-mask {
+  -webkit-mask-image: url(/clix-logo.png);
+          mask-image: url(/clix-logo.png);
+  -webkit-mask-repeat: no-repeat;
+          mask-repeat: no-repeat;
+  -webkit-mask-position: 0 0;
+          mask-position: 0 0;
+  background-color: currentColor;
+}
+
+/* ─── Tool tile (cinematic section) ─────────────────────────────────────── */
+.tool-tile {
+  position: relative;
+  width: 64px;
+  height: 64px;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--paper) 80%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.06),
+    0 12px 28px -10px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+.tool-tile::after {
+  content: "";
+  position: absolute;
+  inset: -20%;
+  border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--accent) 35%, transparent) 0%, transparent 60%);
+  filter: blur(14px);
+  z-index: -1;
+  opacity: 0.7;
+}
+@media (min-width: 768px) {
+  .tool-tile {
+    width: 80px;
+    height: 80px;
+    border-radius: 20px;
+  }
+}
+
+/* Center Clix logo halo for the tool-flow section. */
+.logo-halo {
+  position: relative;
+}
+.logo-halo::before {
+  content: "";
+  position: absolute;
+  inset: -55%;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--accent) 60%, transparent) 0%, transparent 60%),
+    radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--accent-2) 40%, transparent) 0%, transparent 50%);
+  filter: blur(22px);
+  z-index: -1;
+  animation: halo-pulse 4s ease-in-out infinite;
+}
+@keyframes halo-pulse {
+  0%, 100% { opacity: 0.55; transform: scale(1); }
+  50%      { opacity: 0.95; transform: scale(1.08); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .logo-halo::before { animation: none; }
+}
+
+/* Octagon tile breathing glow — used by IntegrationsSection. */
+@keyframes tile-breathe {
+  0%, 100% { transform: scale(1);    opacity: 0.55; }
+  50%      { transform: scale(1.08); opacity: 0.9; }
+}
+@media (prefers-reduced-motion: reduce) {
+  [style*="animation: tile-breathe"] { animation: none !important; }
+}
+
+/* GridPattern — lit cells blink/pulse (staggered via inline animation-delay). */
+@keyframes grid-cell-pulse {
+  0%, 100% { opacity: 0.12; }
+  50%      { opacity: 1; }
+}
+.grid-cell-pulse {
+  animation: grid-cell-pulse 3.4s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .grid-cell-pulse { animation: none; opacity: 0.5; }
+}
+
+
