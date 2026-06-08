@@ -98,22 +98,39 @@ export function VideoHero() {
 
       {/* Legibility scrim — darkest on the content (start) side, fading toward
           the far edge so the footage still breathes. Navy-tinted (#070C1A) to
-          sit on-brand rather than flat black. */}
+          sit on-brand rather than flat black. Masked to fade out before the
+          bottom so it never mixes with the light fade into a muddy corner. */}
       <div
         aria-hidden
         className="absolute inset-0 z-[1]"
         style={{
           background:
             "linear-gradient(270deg, rgba(7,12,26,0.10) 0%, rgba(7,12,26,0.30) 42%, rgba(7,12,26,0.74) 72%, rgba(7,12,26,0.92) 100%)",
+          WebkitMaskImage: "linear-gradient(to top, transparent 0%, #000 22%)",
+          maskImage: "linear-gradient(to top, transparent 0%, #000 22%)",
         }}
       />
-      {/* Soft top + bottom vertical vignette for depth. */}
+      {/* Top vignette only — keeps the nav/eyebrow legible. The bottom is left
+          to the light fade below (no dark vignette there). */}
       <div
         aria-hidden
         className="absolute inset-0 z-[1]"
         style={{
           background:
-            "linear-gradient(to bottom, rgba(7,12,26,0.45) 0%, transparent 22%, transparent 72%, rgba(7,12,26,0.55) 100%)",
+            "linear-gradient(to bottom, rgba(7,12,26,0.45) 0%, transparent 20%)",
+        }}
+      />
+      {/* Bottom fade — keeps the footage crisp through the upper band, then
+          resolves to the exact page colour over an eased multi-stop curve at
+          the very bottom. Concentrating the opacity near the edge avoids the
+          grey "fog" a flat semi-transparent layer leaves over bright video,
+          while still removing the hard brightness jump on scroll. */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 bottom-0 z-[3] h-[18%]"
+        style={{
+          background:
+            "linear-gradient(to bottom, transparent 0%, transparent 38%, color-mix(in srgb, var(--bg) 12%, transparent) 58%, color-mix(in srgb, var(--bg) 45%, transparent) 78%, color-mix(in srgb, var(--bg) 85%, transparent) 92%, var(--bg) 100%)",
         }}
       />
       {/* Content */}
