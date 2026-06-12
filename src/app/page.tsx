@@ -1,3 +1,4 @@
+// Home page — hero followed by the marketing sections.
 import { ParticleHero } from "@/components/ParticleHero";
 import { IntegrationsSection } from "@/components/IntegrationsSection";
 import { VoiceAgentSection } from "@/components/VoiceAgentSection";
