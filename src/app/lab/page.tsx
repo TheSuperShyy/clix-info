@@ -2,8 +2,8 @@ import { ParticleHeroLab } from "@/components/ParticleHeroLab";
 
 /**
  * /lab — test page for the experimental shape-morphing RGB particle hero
- * (expand-in intro → logo → circle → square → triangle → loop). The home hero
- * is unchanged; this uses a separate lab component so we can iterate freely.
+ * (expand-in intro → logo → circle → square → triangle → loop). This design now
+ * also powers the home hero; the lab keeps its own copy so we can iterate freely.
  */
 export const metadata = {
   title: "Lab · shape-morph hero",

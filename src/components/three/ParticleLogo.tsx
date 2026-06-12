@@ -4,59 +4,47 @@ import { useEffect, useRef } from "react";
 import * as THREE from "three";
 
 /* ────────────────────────────────────────────────────────────────────────────
- * ParticleLogo — a 3D particle field that forms the Clix mark.
+ * ParticleLogo — the home-hero particle field (promoted from /lab).
  *
- * Performance: ALL per-particle motion (scatter wander, scatter→mark morph,
- * breathe, depth) runs on the GPU in the vertex shader. The CPU only updates a
- * couple of uniforms per frame (uForm, uTime) and the object's rotation — so
- * there's no 44k-element JS loop and no per-frame buffer upload. Render
- * resolution is capped, and rendering pauses while the hero is scrolled away.
- *
- * Behaviour (unchanged): ~44k additive particles sampled from the LEFTMOST
- * SQUARE of /clix-logo.png (the mark), centred + extruded for real depth.
- * `form` ∈ [0,1] driven by scroll → built/centred by ~40% scroll; idle
- * auto-build/scatter at the top; slow auto-rotate while scattered, front-facing
- * & still when formed; free drag-orbit with inertia. Reduced-motion → static.
+ *  - Intro: a small, compressed Clix mark at the centre EXPANDS to full size.
+ *  - Continuous SLOW morph cycle through HOLLOW 3D tube shapes:
+ *      logo → circle (torus) → square (tube) → triangle (tube) → logo → …
+ *  - One colour for ALL particles, cycling to a new colour every 1.7s.
+ *  - Scroll down → the field morphs into the Clix logo.
+ *  - Alive fluid flow + gentle sway + free drag-orbit.
  * ──────────────────────────────────────────────────────────────────────── */
 
 const VERT = `
-  uniform float uForm;
   uniform float uTime;
   uniform float uScale;
   uniform float uSize;
-  uniform float uFlow;
-  attribute vec3 aTarget;
-  attribute vec3 aColor;
+  uniform float uMorph;
+  uniform float uFlowAmp;
+  uniform float uScrollForm;
+  uniform int uShapeA;
+  uniform int uShapeB;
+  attribute vec3 aLogo;
+  attribute vec3 aTorus;
+  attribute vec3 aSquare;
+  attribute vec3 aTri;
   attribute float aPhase;
-  attribute float aTh;
-  attribute float aSpd;
-  varying vec3 vColor;
+  vec3 shapeAt(int idx) {
+    if (idx == 0) return aLogo;
+    else if (idx == 1) return aTorus;
+    else if (idx == 2) return aSquare;
+    return aTri;
+  }
   void main() {
-    vColor = aColor;
-    float e = smoothstep(aTh, aTh + 0.5, uForm);
-    // scattered wander around the all-around home (position = scatter base)
-    vec3 s = position;
-    s.x += sin(uTime * 0.10 * aSpd + aPhase) * 1.6;
-    s.y += sin(uTime * 0.09 * aSpd + aPhase * 1.7) * 1.6;
-    s.z += sin(uTime * 0.11 * aSpd + aPhase * 0.6) * 1.6;
-    // continuous fluid flow — keeps the formed mark ALIVE (Gemini-like). Spatially
-    // coherent (phase varies with target position) so it undulates like a fluid in
-    // 3D rather than jittering. Two octaves for richer, less-repetitive motion.
-    float ft = uTime * 0.55;
+    vec3 cyclePos = mix(shapeAt(uShapeA), shapeAt(uShapeB), uMorph);
+    vec3 base = mix(cyclePos, aLogo, uScrollForm);   // scroll down → Clix logo
+    float ft = uTime * 0.35;
     vec3 flow = vec3(
-      sin(ft + aTarget.y * 0.5 + aPhase),
-      sin(ft * 0.9 + aTarget.x * 0.5 + aPhase * 1.3),
-      sin(ft * 1.15 + (aTarget.x + aTarget.y) * 0.35 + aPhase * 0.7)
+      sin(ft + base.y * 0.5 + aPhase),
+      sin(ft * 0.9 + base.x * 0.5 + aPhase * 1.3),
+      sin(ft * 1.15 + (base.x + base.y) * 0.35 + aPhase * 0.7)
     );
-    flow += 0.5 * vec3(
-      sin(ft * 1.7 + aTarget.x * 0.9 + aPhase * 1.9),
-      sin(ft * 1.5 + aTarget.y * 0.9 + aPhase * 0.5),
-      sin(ft * 1.9 + (aTarget.x - aTarget.y) * 0.6 + aPhase)
-    );
-    float br = 0.09 * sin(uTime * 0.6 + aPhase);           // default: tiny breathe
-    vec3 tgt = aTarget + mix(vec3(br, br, br * 0.6), flow * 0.5, uFlow); // uFlow=1 → alive flow
-    vec3 p = mix(s, tgt, e);
-    vec4 mv = modelViewMatrix * vec4(p, 1.0);
+    base += flow * uFlowAmp;
+    vec4 mv = modelViewMatrix * vec4(base, 1.0);
     gl_PointSize = uSize * (uScale / -mv.z);
     gl_Position = projectionMatrix * mv;
   }
@@ -65,42 +53,37 @@ const VERT = `
 const FRAG = `
   uniform sampler2D uMap;
   uniform float uOpacity;
-  varying vec3 vColor;
+  uniform float uBright;
+  uniform vec3 uColor;
   void main() {
     vec4 tex = texture2D(uMap, gl_PointCoord);
-    gl_FragColor = vec4(vColor, tex.a * uOpacity);          // additive: rgb weighted by sprite alpha
+    gl_FragColor = vec4(uColor * uBright, tex.a * uOpacity);
   }
 `;
 
-export function ParticleLogo({ className = "", alive = false }: { className?: string; alive?: boolean }) {
+// colour cycle — one vivid colour for the whole field, switching every 1.7s
+const CYCLE = [
+  new THREE.Color("#FF3B5C"), new THREE.Color("#FF9A3B"), new THREE.Color("#FFE03B"),
+  new THREE.Color("#46E86B"), new THREE.Color("#3BE0FF"), new THREE.Color("#3B7BFF"),
+  new THREE.Color("#A24BFF"), new THREE.Color("#FF3BD0"),
+];
+const COLOR_EVERY = 10;
+
+export function ParticleLogo({ className = "" }: { className?: string }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-    // device tier — scale the work to the hardware (same effects, lighter on phones)
     const isMobile = window.matchMedia("(max-width: 768px), (pointer: coarse)").matches;
-    const N = isMobile ? 20000 : 44000;          // particle count
-    const WORLD = isMobile ? 12 : 18.5;          // mark size (fits a narrow screen)
-    const SX = isMobile ? 18 : 32, SY = 20, SZ = isMobile ? 11 : 16; // scatter spread
+    const N = isMobile ? 20000 : 44000;
+    const WORLD = isMobile ? 17 : 28;
+    const S = isMobile ? 0.65 : 1;
 
-    // bright, on-theme blues end-to-end (no near-black outer tones) so the mark
-    // reads as a luminous theme-blue logo. core → accent.
-    const PAL = [
-      new THREE.Color("#EAF6FF"), new THREE.Color("#C8E2FF"),
-      new THREE.Color("#8FC0FF"), new THREE.Color("#5C93F7"), new THREE.Color("#3B7BF5"),
-    ];
-    const MAG = new THREE.Color("#9FE0FF"); // bright cyan sparkle (on-theme)
-    const colorFor = (t: number, out: THREE.Color) => {
-      if (Math.random() < 0.035) { out.copy(MAG); return; }
-      const f = Math.min(0.999, Math.max(0, t)) * (PAL.length - 1), i = Math.floor(f);
-      out.copy(PAL[i]).lerp(PAL[i + 1], f - i);
-    };
     const g1 = () => (Math.random() + Math.random() + Math.random() - 1.5) / 1.5;
 
-    let logo: Float32Array | null = null, lcol: Float32Array | null = null;
+    let logo: Float32Array | null = null;
 
     async function loadMark(): Promise<boolean> {
       try {
@@ -112,7 +95,7 @@ export function ParticleLogo({ className = "", alive = false }: { className?: st
         const cv = document.createElement("canvas"); cv.width = iw; cv.height = ih;
         const cx = cv.getContext("2d")!; cx.drawImage(img, 0, 0);
         const d = cx.getImageData(0, 0, iw, ih).data;
-        const cropW = Math.min(iw, Math.round(ih * 1.08)); // leftmost square ≈ the mark
+        const cropW = Math.min(iw, Math.round(ih * 1.08));
         let pts: number[] = [], minX = 1e9, maxX = -1e9, minY = 1e9, maxY = -1e9, opaque = 0;
         for (let y = 0; y < ih; y++) for (let x = 0; x < cropW; x++) {
           if (d[(y * iw + x) * 4 + 3] > 140) { opaque++; pts.push(x, y); if (x < minX) minX = x; if (x > maxX) maxX = x; if (y < minY) minY = y; if (y > maxY) maxY = y; }
@@ -127,16 +110,14 @@ export function ParticleLogo({ className = "", alive = false }: { className?: st
         if (pts.length < 400) return false;
         const bw = maxX - minX, bh = maxY - minY, cxm = (minX + maxX) / 2, cym = (minY + maxY) / 2;
         const scale = WORLD / Math.max(bw, bh);
-        logo = new Float32Array(N * 3); lcol = new Float32Array(N * 3);
-        const c = new THREE.Color(); const M = pts.length / 2;
+        logo = new Float32Array(N * 3);
+        const M = pts.length / 2;
         for (let i = 0; i < N; i++) {
           const k = Math.floor(Math.random() * M) * 2, px = pts[k], py = pts[k + 1];
-          logo[i * 3] = (px - cxm) * scale + g1() * 0.28;
-          logo[i * 3 + 1] = -(py - cym) * scale + g1() * 0.28;
-          logo[i * 3 + 2] = (Math.random() - 0.5) * 5.0 + g1() * 0.5;
-          const dist = Math.hypot((px - cxm) / (bw / 2), (py - cym) / (bh / 2));
-          colorFor(dist * 0.9, c); const b = 0.7 + Math.random() * 0.55;
-          lcol[i * 3] = Math.min(1, c.r * b); lcol[i * 3 + 1] = Math.min(1, c.g * b); lcol[i * 3 + 2] = Math.min(1, c.b * b);
+          const hs = spread[i] * 1.7;                     // gentler halo on the logo (keep the mark readable)
+          logo[i * 3] = (px - cxm) * scale + g1() * 0.28 + g1() * hs;
+          logo[i * 3 + 1] = -(py - cym) * scale + g1() * 0.28 + g1() * hs;
+          logo[i * 3 + 2] = (Math.random() - 0.5) * 7.0 + g1() * 0.6 + g1() * hs; // wide Z volume
         }
         return true;
       } catch { return false; }
@@ -150,7 +131,7 @@ export function ParticleLogo({ className = "", alive = false }: { className?: st
       const t = new THREE.Texture(cv); t.needsUpdate = true; return t;
     };
 
-    const pr = Math.min(window.devicePixelRatio || 1, isMobile ? 1.25 : 1.5); // cap render resolution
+    const pr = Math.min(window.devicePixelRatio || 1, isMobile ? 1.25 : 1.5);
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     renderer.setPixelRatio(pr);
     const size = () => { const r = canvas.getBoundingClientRect(); return { w: r.width || window.innerWidth, h: r.height || window.innerHeight }; };
@@ -159,142 +140,202 @@ export function ParticleLogo({ className = "", alive = false }: { className?: st
     const camera = new THREE.PerspectiveCamera(55, w / h, 0.1, 200); camera.position.set(0, 0, 26);
 
     const uniforms = {
-      uForm: { value: 0 }, uTime: { value: 0 },
-      uScale: { value: h * 0.5 }, uSize: { value: 0.165 * pr * (isMobile ? 1.35 : 1) },
-      uOpacity: { value: 0.95 }, uMap: { value: sprite() }, uFlow: { value: alive ? 1 : 0 },
+      uTime: { value: 0 }, uScale: { value: h * 0.5 }, uSize: { value: 0.27 * pr * (isMobile ? 1.35 : 1) },
+      uMorph: { value: 0 }, uShapeA: { value: 0 }, uShapeB: { value: 0 }, uFlowAmp: { value: 0.18 },
+      uScrollForm: { value: 0 }, uOpacity: { value: 1.0 }, uBright: { value: 2.6 }, uMap: { value: sprite() }, uColor: { value: CYCLE[0].clone() },
     };
-    const mat = new THREE.ShaderMaterial({
-      uniforms, vertexShader: VERT, fragmentShader: FRAG,
-      transparent: true, blending: THREE.AdditiveBlending, depthWrite: false,
-    });
+    const mat = new THREE.ShaderMaterial({ uniforms, vertexShader: VERT, fragmentShader: FRAG, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false });
 
-    // faint starfield (cheap, static)
     const dustGeo = new THREE.BufferGeometry();
     { const n = isMobile ? 1100 : 2200, p = new Float32Array(n * 3); for (let i = 0; i < n; i++) { p[i * 3] = (Math.random() - .5) * 130; p[i * 3 + 1] = (Math.random() - .5) * 90; p[i * 3 + 2] = (Math.random() - .5) * 130; } dustGeo.setAttribute("position", new THREE.BufferAttribute(p, 3)); }
-    const dustMat = new THREE.PointsMaterial({ size: 0.08, color: 0x223f73, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false });
+    const dustMat = new THREE.PointsMaterial({ size: 0.07, color: 0x222a40, transparent: true, opacity: 0.4, blending: THREE.AdditiveBlending, depthWrite: false });
     scene.add(new THREE.Points(dustGeo, dustMat));
 
-    const scat = new Float32Array(N * 3);
-    const phase = new Float32Array(N), th = new Float32Array(N), spd = new Float32Array(N);
-    for (let i = 0; i < N; i++) { phase[i] = Math.random() * Math.PI * 2; th[i] = Math.random() * 0.5; spd[i] = 0.7 + Math.random() * 0.8; }
-    function buildScatter() {
-      for (let i = 0; i < N; i++) { const o = i * 3; scat[o] = (Math.random() * 2 - 1) * SX; scat[o + 1] = (Math.random() * 2 - 1) * SY; scat[o + 2] = (Math.random() * 2 - 1) * SZ; }
+    const aPhase = new Float32Array(N);
+    for (let i = 0; i < N; i++) aPhase[i] = Math.random() * Math.PI * 2;
+    const torus = new Float32Array(N * 3), square = new Float32Array(N * 3), tri = new Float32Array(N * 3);
+
+    // halo: particles drift OFF the shape outline into a soft surrounding cloud →
+    // real volume, not a thin shell. Two tiers: a NEAR cloud hugging the form, plus
+    // sparse OUTER wisps scattered well beyond it. spread[i] is per-particle and
+    // consistent across every shape.
+    const HALO_FRAC = 0.22, OUTER_FRAC = 0.11, HALO = 2.4 * S;
+    const spread = new Float32Array(N);
+    for (let i = 0; i < N; i++) {
+      const r = Math.random();
+      spread[i] = r < OUTER_FRAC ? 2.6 + Math.random() * 2.4                 // outer wisps — scattered a bit far
+        : r < OUTER_FRAC + HALO_FRAC ? 0.4 + Math.random() * Math.random() * 2.0 // near halo hugging the form
+          : 0;                                                                // on the outline
+    }
+
+    // place a particle on a hollow FRAME edge (ax,ay)->(bx,by): thin IN-PLANE band
+    // (width `wall`) but THICK in Z (`depth`) → thin from the front, volume from the
+    // side. `bend` bows the edge slightly inward (0 at corners, max at mid-edge).
+    function tube(arr: Float32Array, o: number, ax: number, ay: number, bx: number, by: number, wall: number, depth: number, bend: number) {
+      const t = Math.random();
+      let px = ax + (bx - ax) * t, py = ay + (by - ay) * t;
+      const m = Math.sin(Math.PI * t) * bend, pl = Math.hypot(px, py) || 1;
+      px -= (px / pl) * m; py -= (py / pl) * m;        // concave edge
+      let dx = bx - ax, dy = by - ay; const len = Math.hypot(dx, dy) || 1; dx /= len; dy /= len;
+      const nx = -dy, ny = dx;                          // in-plane normal
+      const ip = (Math.random() * 2 - 1) * wall;        // thin band in-plane
+      arr[o] = px + nx * ip; arr[o + 1] = py + ny * ip; arr[o + 2] = (Math.random() * 2 - 1) * depth;
+    }
+
+    function buildShapes() {
+      const R = 13.2 * S, WALL = 0.5 * S, DEPTH = 5.4 * S; // donut: bigger ring, thin wall, thick Z
+      const H = 13.8 * S, bend = 2.5 * S;                  // diamond half-extent
+      const Rt = 16.4 * S, bendT = 3.4 * S;                // triangle circumradius
+      const TV = [0, 1, 2].map((k) => { const a = Math.PI / 2 + k * (2 * Math.PI / 3); return [Math.cos(a) * Rt, Math.sin(a) * Rt]; });
+      const SQ = [[0, H], [H, 0], [0, -H], [-H, 0]]; // diamond (square tilted 45°)
+      for (let i = 0; i < N; i++) {
+        const o = i * 3;
+        // circle = a ring WALL (cylinder): thin radially (front = thin ring), thick in Z (side = volume)
+        { const a = Math.random() * Math.PI * 2, wr = R + (Math.random() * 2 - 1) * WALL;
+          torus[o] = wr * Math.cos(a); torus[o + 1] = wr * Math.sin(a); torus[o + 2] = (Math.random() * 2 - 1) * DEPTH; }
+        // hollow square frame (thin band, thick Z, bowed inward)
+        { const s = Math.floor(Math.random() * 4), c0 = SQ[s], c1 = SQ[(s + 1) % 4]; tube(square, o, c0[0], c0[1], c1[0], c1[1], WALL, DEPTH, bend); }
+        // hollow triangle frame (thin band, thick Z, bowed inward)
+        { const e = Math.floor(Math.random() * 3), c0 = TV[e], c1 = TV[(e + 1) % 3]; tube(tri, o, c0[0], c0[1], c1[0], c1[1], WALL, DEPTH, bendT); }
+        // halo: push the drift particles off each outline into a soft surrounding cloud
+        if (spread[i] > 0) {
+          const hs = spread[i] * HALO;
+          torus[o] += g1() * hs; torus[o + 1] += g1() * hs; torus[o + 2] += g1() * hs;
+          square[o] += g1() * hs; square[o + 1] += g1() * hs; square[o + 2] += g1() * hs;
+          tri[o] += g1() * hs; tri[o + 1] += g1() * hs; tri[o + 2] += g1() * hs;
+        }
+      }
     }
 
     let geo: THREE.BufferGeometry | null = null, points: THREE.Points | null = null;
 
-    let raf = 0, lastT = performance.now() / 1000, lastScroll = lastT, form = 0, intro = true;
-    let autoW = 0, autoPhase = 0, synced = false;
-    let dragging = false, dpx = 0, dpy = 0, rotY = 0, rotX = 0, velY = 0, velX = 0, lastInteract = -100;
-    let mx = 0, my = 0, tmx = 0, tmy = 0;
-    const AUTO_SPEED = 0.30, IDLE = 1.2;
+    let raf = 0, lastT = performance.now() / 1000, lastInteract = -100;
+    let introStage = 0, introT = 0, cycleT = 0, scrollForm = 0, clockT = 0, bootT = 0;   // 0 reveal, 2 cycle+loop
+    let dragging = false, dpx = 0, dpy = 0, rotY = 0, rotX = 0, tRotY = 0, tRotX = 0, velY = 0, velX = 0;
+    const REVEAL = 1.5, CLOCK_STEP = 10.0, CLOCK_A = 1.0, STAGE = 22, HOLD = 6.0, CLOCK_CRAWL = 1.0;
+    const INTRO_DELAY = 2.7; // hold the mark hidden until the hero text + CTA finish rendering (see ParticleHero timing)
+    const CLOCK_MAXV = 0.22; // rad/s — cap so resuming after a drag CRAWLS back, never snaps
+    const CLOCKS = [[-0.5, 0.866], [1, 0], [0.5, -0.866], [-0.866, -0.5], [0, 0]]; // 11,3,5,8,centre (dx,dy)
+    const ss = (p: number) => { p = Math.min(1, Math.max(0, p)); return p * p * (3 - 2 * p); };
+    const colA = new THREE.Color(), colB = new THREE.Color();
 
-    const onScroll = () => { lastScroll = performance.now() / 1000; synced = false; };
-    const onMove = (e: MouseEvent) => { tmx = e.clientX / window.innerWidth - .5; tmy = e.clientY / window.innerHeight - .5; };
-    const onDown = (e: PointerEvent) => { dragging = true; dpx = e.clientX; dpy = e.clientY; velY = velX = 0; lastInteract = performance.now() / 1000; canvas.style.cursor = "grabbing"; };
+    const onDown = (e: PointerEvent) => { dragging = true; dpx = e.clientX; dpy = e.clientY; tRotY = rotY; tRotX = rotX; velY = velX = 0; lastInteract = performance.now() / 1000; canvas.style.cursor = "grabbing"; };
     const onUp = () => { dragging = false; lastInteract = performance.now() / 1000; canvas.style.cursor = "grab"; };
-    const onDrag = (e: PointerEvent) => { if (!dragging) return; const dx = (e.clientX - dpx) * 0.006, dy = (e.clientY - dpy) * 0.006; rotY += dx; rotX += dy; velY = dx; velX = dy; dpx = e.clientX; dpy = e.clientY; lastInteract = performance.now() / 1000; };
+    const onDrag = (e: PointerEvent) => { if (!dragging) return; tRotY += (e.clientX - dpx) * 0.004; if (!isMobile) tRotX += (e.clientY - dpy) * 0.004; dpx = e.clientX; dpy = e.clientY; lastInteract = performance.now() / 1000; }; // mobile: horizontal rotates, vertical scrolls
     const onResize = () => { const s = size(); w = s.w; h = s.h; camera.aspect = w / h; camera.updateProjectionMatrix(); renderer.setSize(w, h, false); uniforms.uScale.value = h * 0.5; };
-
-    const ss = (a: number, b: number, x: number) => { x = Math.min(1, Math.max(0, (x - a) / (b - a))); return x * x * (3 - 2 * x); };
 
     function frame(now: number) {
       raf = requestAnimationFrame(frame);
       now /= 1000; const t = now, dt = Math.min(0.05, t - lastT); lastT = t;
-
-      // pause rendering while the hero is fully scrolled past / covered
       if (window.scrollY > window.innerHeight * 1.05) return;
 
-      if (intro) {
-        // fresh load → assemble the mark immediately (snappy entrance), then hand
-        // off to the normal scroll / idle behaviour.
-        form += (1 - form) * 0.09;
-        if (form > 0.985 || window.scrollY > 4) intro = false;
-      } else {
-        const sf = Math.min(1, window.scrollY / (window.innerHeight * 0.40));
-        const idle = (t - lastScroll) > IDLE && window.scrollY < window.innerHeight * 0.05;
-        autoW += ((idle ? 1 : 0) - autoW) * (idle ? 0.02 : 0.10);
-        if (idle && !synced) { autoPhase = Math.acos(Math.min(1, Math.max(-1, 1 - 2 * form))); synced = true; }
-        if (idle) { const ph = autoPhase % (Math.PI * 2); autoPhase += dt * AUTO_SPEED * (ph < Math.PI ? 0.55 : 1.0); }
-        const autoForm = 0.5 - 0.5 * Math.cos(autoPhase);
-        const formTarget = sf * (1 - autoW) + autoForm * autoW;
-        form += (formTarget - form) * 0.06;
-      }
-      uniforms.uForm.value = form;
-      uniforms.uTime.value = t;
-      mx += (tmx - mx) * 0.04; my += (tmy - my) * 0.04;
+      // scroll down → Clix logo
+      const sfTarget = Math.min(1, window.scrollY / (window.innerHeight * 0.40));
+      scrollForm += (sfTarget - scrollForm) * 0.08;
+      uniforms.uScrollForm.value = scrollForm;
 
-      const spin = Math.max(0, 1 - form * 1.4);
-      const free = (t - lastInteract) < 5.0;
-      if (dragging) { /* pointer-driven */ }
-      else if (free) { rotY += velY; rotX += velX; velY *= 0.94; velX *= 0.94; }
-      else {
-        rotY += dt * 0.16 * spin;                       // spin while scattered
-        const front = Math.round(rotY / (Math.PI * 2)) * Math.PI * 2;
-        if (alive) {
-          // formed → gentle continuous 3D sway (alive, with depth)
-          const swayY = Math.sin(t * 0.18) * 0.22, swayX = Math.sin(t * 0.13) * 0.10;
-          rotY += ((front + swayY) - rotY) * (1 - spin) * 0.06;
-          rotX += (swayX - rotX) * (1 - spin) * 0.06;
-        } else {
-          // formed → front-facing & still
-          rotY += (front - rotY) * (1 - spin) * 0.05;
-          rotX += (0 - rotX) * (1 - spin) * 0.05;
-        }
-        velY *= 0.9; velX *= 0.9;
+      // hold the mark fully HIDDEN until the hero text + buttons have rendered
+      // (don't collapse to scale 0 — that stacks every particle into one bright dot)
+      if (bootT < INTRO_DELAY) {
+        bootT += dt;
+        if (points) points.visible = false;
+        uniforms.uTime.value = t;
+        renderer.render(scene, camera);
+        return;
       }
-      const ctrl = dragging || free;
-      if (points) { points.rotation.y = rotY; points.rotation.x = rotX + (ctrl ? 0 : my * 0.05 * spin); }
-      const camFac = ctrl ? 0 : spin;
-      camera.position.x = mx * 1.4 * camFac; camera.position.y = -my * 1.1 * camFac; camera.lookAt(0, 0, 0);
+      if (points && !points.visible) points.visible = true;
+
+      if (introStage === 0) {
+        // reveal: super-compressed dot → full logo, held CENTRED
+        introT += dt;
+        const e = ss(Math.min(1, introT / REVEAL));
+        if (points) points.scale.setScalar(0.015 + 0.985 * e);
+        uniforms.uShapeA.value = 0; uniforms.uShapeB.value = 0; uniforms.uMorph.value = 0;
+        rotY += (0 - rotY) * 0.12; rotX += (0 - rotX) * 0.12;
+        if (introT >= REVEAL) { introStage = 2; cycleT = 0; clockT = 0; }
+      } else {
+        // shape cycle
+        if (points) points.scale.setScalar(1);
+        cycleT += dt;
+        const stage = Math.floor(cycleT / STAGE) % 4;
+        const local = cycleT % STAGE;
+        uniforms.uShapeA.value = stage;
+        uniforms.uShapeB.value = (stage + 1) % 4;
+        uniforms.uMorph.value = local < HOLD ? 0 : ss((local - HOLD) / (STAGE - HOLD));
+        // rotation: heavy drag-orbit, else a smooth LOOPING clock tumble: centre→11→3→5→8→centre→…
+        const free = (t - lastInteract) < 6.0;
+        if (dragging) {
+          const ny = rotY + (tRotY - rotY) * 0.06, nx = rotX + (tRotX - rotX) * 0.06; // heavy, laggy follow
+          velY = ny - rotY; velX = nx - rotX; rotY = ny; rotX = nx;
+        } else if (free) {
+          rotY += velY; rotX += velX; velY *= 0.965; velX *= 0.965;                   // long, heavy glide
+        } else {
+          clockT += dt;
+          const period = CLOCKS.length * CLOCK_STEP, ph = clockT % period;
+          const idx = Math.floor(ph / CLOCK_STEP), frac = (ph % CLOCK_STEP) / CLOCK_STEP;
+          const prev = CLOCKS[(idx - 1 + CLOCKS.length) % CLOCKS.length], cur = CLOCKS[idx];
+          const m = Math.min(1, frac / CLOCK_CRAWL);     // LINEAR constant-velocity crawl (no ease = no snap)
+          const k = 1 - scrollForm;                       // settle to centre/front when scrolled to the logo
+          const tgtY = (prev[0] + (cur[0] - prev[0]) * m) * CLOCK_A * k;
+          const tgtX = -(prev[1] + (cur[1] - prev[1]) * m) * CLOCK_A * k;
+          const cap = CLOCK_MAXV * dt;                    // speed limit → no instant catch-up after a drag
+          const dY = (tgtY - rotY) * 0.16, dX = (tgtX - rotX) * 0.16; // heavy, smooth follow
+          rotY += Math.max(-cap, Math.min(cap, dY));
+          rotX += Math.max(-cap, Math.min(cap, dX));
+          velY *= 0.9; velX *= 0.9;
+        }
+      }
+      uniforms.uTime.value = t;
+
+      // one colour for the whole field, changing every COLOR_EVERY seconds (hold, then crossfade)
+      const ci = Math.floor(t / COLOR_EVERY), cf = t / COLOR_EVERY - ci;
+      colA.copy(CYCLE[ci % CYCLE.length]); colB.copy(CYCLE[(ci + 1) % CYCLE.length]);
+      (uniforms.uColor.value as THREE.Color).copy(colA).lerp(colB, ss((cf - 0.8) / 0.2));
+
+      if (points) {
+        points.rotation.y = rotY; points.rotation.x = rotX;
+        points.position.set(Math.sin(t * 0.16) * 0.6, Math.sin(t * 0.23) * 0.7, 0); // floating
+      }
       renderer.render(scene, camera);
     }
 
     let cancelled = false;
     loadMark().then((ok) => {
       if (cancelled) return;
-      if (!ok) {
-        logo = new Float32Array(N * 3); lcol = new Float32Array(N * 3); const c = new THREE.Color();
-        for (let i = 0; i < N; i++) { const a = Math.random() * Math.PI * 2, rr = 7 + g1() * 1.4; logo[i * 3] = Math.cos(a) * rr; logo[i * 3 + 1] = Math.sin(a) * rr; logo[i * 3 + 2] = (Math.random() - 0.5) * 5; colorFor(Math.random(), c); lcol[i * 3] = c.r; lcol[i * 3 + 1] = c.g; lcol[i * 3 + 2] = c.b; }
-      }
-      buildScatter();
+      if (!ok) { logo = new Float32Array(N * 3); for (let i = 0; i < N; i++) { const a = Math.random() * Math.PI * 2, rr = 7 + g1() * 1.4; logo[i * 3] = Math.cos(a) * rr; logo[i * 3 + 1] = Math.sin(a) * rr; logo[i * 3 + 2] = (Math.random() - 0.5) * 0.9; } }
+      buildShapes();
       geo = new THREE.BufferGeometry();
-      geo.setAttribute("position", new THREE.BufferAttribute(scat, 3));     // scatter home (static)
-      geo.setAttribute("aTarget", new THREE.BufferAttribute(logo!, 3));     // mark target (static)
-      geo.setAttribute("aColor", new THREE.BufferAttribute(lcol!, 3));
-      geo.setAttribute("aPhase", new THREE.BufferAttribute(phase, 1));
-      geo.setAttribute("aTh", new THREE.BufferAttribute(th, 1));
-      geo.setAttribute("aSpd", new THREE.BufferAttribute(spd, 1));
+      geo.setAttribute("position", new THREE.BufferAttribute(logo!, 3));
+      geo.setAttribute("aLogo", new THREE.BufferAttribute(logo!, 3));
+      geo.setAttribute("aTorus", new THREE.BufferAttribute(torus, 3));
+      geo.setAttribute("aSquare", new THREE.BufferAttribute(square, 3));
+      geo.setAttribute("aTri", new THREE.BufferAttribute(tri, 3));
+      geo.setAttribute("aPhase", new THREE.BufferAttribute(aPhase, 1));
       points = new THREE.Points(geo, mat);
+      points.frustumCulled = false;
+      points.scale.setScalar(0.05);
       scene.add(points);
 
-      if (reduce) { uniforms.uForm.value = 1; uniforms.uTime.value = 0; renderer.render(scene, camera); return; }
+      if (reduce) { introStage = 2; points.scale.setScalar(1); uniforms.uShapeA.value = 0; uniforms.uShapeB.value = 0; uniforms.uMorph.value = 0; renderer.render(scene, camera); return; }
 
-      window.addEventListener("scroll", onScroll, { passive: true });
-      window.addEventListener("wheel", onScroll, { passive: true });
-      window.addEventListener("touchmove", onScroll, { passive: true });
       window.addEventListener("resize", onResize);
-      if (!isMobile) {                          // desktop: cursor parallax + drag-to-orbit
-        window.addEventListener("mousemove", onMove);
-        canvas.addEventListener("pointerdown", onDown);
-        window.addEventListener("pointerup", onUp);
-        window.addEventListener("pointermove", onDrag);
-        canvas.style.cursor = "grab";
-      }
+      canvas.addEventListener("pointerdown", onDown);
+      window.addEventListener("pointerup", onUp);
+      window.addEventListener("pointercancel", onUp);
+      window.addEventListener("pointermove", onDrag);
+      if (isMobile) canvas.style.touchAction = "pan-y"; // vertical = scroll, horizontal drag = rotate
+      else canvas.style.cursor = "grab";
       raf = requestAnimationFrame(frame);
     });
 
     return () => {
       cancelled = true;
       cancelAnimationFrame(raf);
-      window.removeEventListener("scroll", onScroll);
-      window.removeEventListener("wheel", onScroll);
-      window.removeEventListener("touchmove", onScroll);
-      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("resize", onResize);
       canvas.removeEventListener("pointerdown", onDown);
       window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
       window.removeEventListener("pointermove", onDrag);
-      window.removeEventListener("resize", onResize);
       geo?.dispose(); mat.dispose(); dustGeo.dispose(); dustMat.dispose();
       (uniforms.uMap.value as THREE.Texture)?.dispose(); renderer.dispose();
     };
