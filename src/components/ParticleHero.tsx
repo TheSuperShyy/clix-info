@@ -19,7 +19,7 @@ const ParticleLogo = dynamic(
   { ssr: false, loading: () => null },
 );
 
-export function ParticleHero() {
+export function ParticleHero({ alive = false }: { alive?: boolean }) {
   const { scrollY } = useScroll();
   const fade = useTransform(scrollY, [0, 320], [1, 0]);
 
@@ -29,7 +29,7 @@ export function ParticleHero() {
       className="sticky top-0 z-0 flex h-[100svh] min-h-[640px] items-end overflow-hidden bg-black"
     >
       {/* Particle stage — fills the section, paints once mounted (ssr:false). */}
-      <ParticleLogo className="absolute inset-0 h-full w-full" />
+      <ParticleLogo alive={alive} className="absolute inset-0 h-full w-full" />
 
       {/* Bottom scrim so the copy stays legible over the lower particles. */}
       <div

@@ -24,6 +24,7 @@ const VERT = `
   uniform float uTime;
   uniform float uScale;
   uniform float uSize;
+  uniform float uFlow;
   attribute vec3 aTarget;
   attribute vec3 aColor;
   attribute float aPhase;
@@ -38,8 +39,22 @@ const VERT = `
     s.x += sin(uTime * 0.10 * aSpd + aPhase) * 1.6;
     s.y += sin(uTime * 0.09 * aSpd + aPhase * 1.7) * 1.6;
     s.z += sin(uTime * 0.11 * aSpd + aPhase * 0.6) * 1.6;
-    float br = 0.09 * sin(uTime * 0.6 + aPhase);            // tiny breathe when formed
-    vec3 tgt = aTarget + vec3(br, br, br * 0.6);
+    // continuous fluid flow — keeps the formed mark ALIVE (Gemini-like). Spatially
+    // coherent (phase varies with target position) so it undulates like a fluid in
+    // 3D rather than jittering. Two octaves for richer, less-repetitive motion.
+    float ft = uTime * 0.55;
+    vec3 flow = vec3(
+      sin(ft + aTarget.y * 0.5 + aPhase),
+      sin(ft * 0.9 + aTarget.x * 0.5 + aPhase * 1.3),
+      sin(ft * 1.15 + (aTarget.x + aTarget.y) * 0.35 + aPhase * 0.7)
+    );
+    flow += 0.5 * vec3(
+      sin(ft * 1.7 + aTarget.x * 0.9 + aPhase * 1.9),
+      sin(ft * 1.5 + aTarget.y * 0.9 + aPhase * 0.5),
+      sin(ft * 1.9 + (aTarget.x - aTarget.y) * 0.6 + aPhase)
+    );
+    float br = 0.09 * sin(uTime * 0.6 + aPhase);           // default: tiny breathe
+    vec3 tgt = aTarget + mix(vec3(br, br, br * 0.6), flow * 0.5, uFlow); // uFlow=1 → alive flow
     vec3 p = mix(s, tgt, e);
     vec4 mv = modelViewMatrix * vec4(p, 1.0);
     gl_PointSize = uSize * (uScale / -mv.z);
@@ -57,7 +72,7 @@ const FRAG = `
   }
 `;
 
-export function ParticleLogo({ className = "" }: { className?: string }) {
+export function ParticleLogo({ className = "", alive = false }: { className?: string; alive?: boolean }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   useEffect(() => {
@@ -146,7 +161,7 @@ export function ParticleLogo({ className = "" }: { className?: string }) {
     const uniforms = {
       uForm: { value: 0 }, uTime: { value: 0 },
       uScale: { value: h * 0.5 }, uSize: { value: 0.165 * pr * (isMobile ? 1.35 : 1) },
-      uOpacity: { value: 0.95 }, uMap: { value: sprite() },
+      uOpacity: { value: 0.95 }, uMap: { value: sprite() }, uFlow: { value: alive ? 1 : 0 },
     };
     const mat = new THREE.ShaderMaterial({
       uniforms, vertexShader: VERT, fragmentShader: FRAG,
@@ -214,10 +229,18 @@ export function ParticleLogo({ className = "" }: { className?: string }) {
       if (dragging) { /* pointer-driven */ }
       else if (free) { rotY += velY; rotX += velX; velY *= 0.94; velX *= 0.94; }
       else {
-        rotY += dt * 0.16 * spin;
+        rotY += dt * 0.16 * spin;                       // spin while scattered
         const front = Math.round(rotY / (Math.PI * 2)) * Math.PI * 2;
-        rotY += (front - rotY) * (1 - spin) * 0.05;
-        rotX += (0 - rotX) * (1 - spin) * 0.05;
+        if (alive) {
+          // formed → gentle continuous 3D sway (alive, with depth)
+          const swayY = Math.sin(t * 0.18) * 0.22, swayX = Math.sin(t * 0.13) * 0.10;
+          rotY += ((front + swayY) - rotY) * (1 - spin) * 0.06;
+          rotX += (swayX - rotX) * (1 - spin) * 0.06;
+        } else {
+          // formed → front-facing & still
+          rotY += (front - rotY) * (1 - spin) * 0.05;
+          rotX += (0 - rotX) * (1 - spin) * 0.05;
+        }
         velY *= 0.9; velX *= 0.9;
       }
       const ctrl = dragging || free;
