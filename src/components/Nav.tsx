@@ -312,18 +312,6 @@ export function Nav() {
         </div>
       </div>
 
-      {/* Soft top fade */}
-      <div
-        aria-hidden
-        className={`pointer-events-none absolute inset-x-0 top-0 h-24 transition-opacity duration-500 ${
-          scrolled ? "opacity-100" : "opacity-0"
-        }`}
-        style={{
-          background:
-            "linear-gradient(to bottom, color-mix(in srgb, var(--bg) 75%, transparent) 0%, transparent 100%)",
-        }}
-      />
-
       {/* Mobile menu */}
       <AnimatePresence>
         {open && (
