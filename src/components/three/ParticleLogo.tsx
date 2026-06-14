@@ -21,6 +21,7 @@ const VERT = `
   uniform float uMorph;
   uniform float uFlowAmp;
   uniform float uScrollForm;
+  uniform float uRadNorm;
   uniform int uShapeA;
   uniform int uShapeB;
   attribute vec3 aLogo;
@@ -28,6 +29,9 @@ const VERT = `
   attribute vec3 aSquare;
   attribute vec3 aTri;
   attribute float aPhase;
+  attribute float aBright;
+  varying float vBright;
+  varying float vRad;
   vec3 shapeAt(int idx) {
     if (idx == 0) return aLogo;
     else if (idx == 1) return aTorus;
@@ -37,6 +41,12 @@ const VERT = `
   void main() {
     vec3 cyclePos = mix(shapeAt(uShapeA), shapeAt(uShapeB), uMorph);
     vec3 base = mix(cyclePos, aLogo, uScrollForm);   // scroll down → Clix logo
+    vRad = clamp(length(base.xy) / uRadNorm, 0.0, 1.0); // 0 centre → 1 edge (drives the colour crawl)
+    // structural brightness: the outer rim / corners hit FULL brightness, fading
+    // toward the centre. (radial gradient survives additive blending; random doesn't.)
+    float edge = mix(0.34, 1.0, smoothstep(0.42, 0.80, vRad));
+    edge = mix(edge, 0.9, uScrollForm);                 // logo stays ~uniform & readable on scroll
+    vBright = aBright * edge;
     float ft = uTime * 0.35;
     vec3 flow = vec3(
       sin(ft + base.y * 0.5 + aPhase),
@@ -54,10 +64,23 @@ const FRAG = `
   uniform sampler2D uMap;
   uniform float uOpacity;
   uniform float uBright;
-  uniform vec3 uColor;
+  uniform float uColorMix;
+  uniform float uPulseAmt;
+  uniform vec3 uColorA;
+  uniform vec3 uColorB;
+  varying float vBright;
+  varying float vRad;
   void main() {
     vec4 tex = texture2D(uMap, gl_PointCoord);
-    gl_FragColor = vec4(uColor * uBright, tex.a * uOpacity);
+    // colour change CRAWLS from the centre (vRad 0) outward to the edge (vRad 1)
+    float W = 0.45;                                  // wavefront softness/width
+    float front = uColorMix * (1.0 + W);             // sweeps 0 → 1+W as the mix runs
+    float localMix = clamp((front - vRad) / W, 0.0, 1.0);
+    vec3 col = mix(uColorA, uColorB, localMix);
+    // brightness pulse riding the wavefront → a bright ring crawling outward
+    float ring = 1.0 - abs(localMix - 0.5) * 2.0;    // 0 at the ends, 1 mid-transition
+    float pulse = 1.0 + uPulseAmt * max(0.0, ring);
+    gl_FragColor = vec4(col * uBright * vBright * pulse, tex.a * uOpacity);
   }
 `;
 
@@ -147,7 +170,9 @@ export function ParticleLogo({ className = "" }: { className?: string }) {
     const uniforms = {
       uTime: { value: 0 }, uScale: { value: h * 0.5 }, uSize: { value: 0.27 * pr * (isMobile ? 0.72 : 1) },
       uMorph: { value: 0 }, uShapeA: { value: 0 }, uShapeB: { value: 0 }, uFlowAmp: { value: 0.18 },
-      uScrollForm: { value: 0 }, uOpacity: { value: 1.0 }, uBright: { value: 2.4 }, uMap: { value: sprite() }, uColor: { value: LOGO_BLUE.clone() },
+      uScrollForm: { value: 0 }, uOpacity: { value: 1.0 }, uBright: { value: 3.0 }, uMap: { value: sprite() },
+      uColorA: { value: LOGO_BLUE.clone() }, uColorB: { value: LOGO_BLUE.clone() }, uColorMix: { value: 0 },
+      uPulseAmt: { value: 1.0 }, uRadNorm: { value: 17 * S },
     };
     const mat = new THREE.ShaderMaterial({ uniforms, vertexShader: VERT, fragmentShader: FRAG, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false });
 
@@ -171,6 +196,13 @@ export function ParticleLogo({ className = "" }: { className?: string }) {
       spread[i] = r < OUTER_FRAC ? 2.6 + Math.random() * 2.4                 // outer wisps — scattered a bit far
         : r < OUTER_FRAC + HALO_FRAC ? 0.4 + Math.random() * Math.random() * 2.0 // near halo hugging the form
           : 0;                                                                // on the outline
+    }
+
+    // per-particle base brightness: core ~full, the halo fades HARD the farther it
+    // drifts (slight sparkle for texture). The rim/corner emphasis is added in-shader.
+    const aBright = new Float32Array(N);
+    for (let i = 0; i < N; i++) {
+      aBright[i] = (0.85 + Math.random() * 0.3) / (1 + spread[i] * 1.3);
     }
 
     // place a particle on a hollow FRAME edge (ax,ay)->(bx,by): thin IN-PLANE band
@@ -223,7 +255,7 @@ export function ParticleLogo({ className = "" }: { className?: string }) {
     const LIFT_WORLD = 13.5; // ≈ half the camera's visible world-height: raise the logo per viewport scrolled so it stays centred above the sliding content
     const CLOCKS = [[-0.5, 0.866], [1, 0], [0.5, -0.866], [-0.866, -0.5], [0, 0]]; // 11,3,5,8,centre (dx,dy)
     const ss = (p: number) => { p = Math.min(1, Math.max(0, p)); return p * p * (3 - 2 * p); };
-    const colA = new THREE.Color(), colB = new THREE.Color(), colC = new THREE.Color(), colD = new THREE.Color();
+    const colA = new THREE.Color(), colB = new THREE.Color(), colC = new THREE.Color();
 
     const onDown = (e: PointerEvent) => { dragging = true; dpx = e.clientX; dpy = e.clientY; tRotY = rotY; tRotX = rotX; velY = velX = 0; lastInteract = performance.now() / 1000; canvas.style.cursor = "grabbing"; };
     const onUp = () => { dragging = false; lastInteract = performance.now() / 1000; canvas.style.cursor = "grab"; };
@@ -301,16 +333,22 @@ export function ParticleLogo({ className = "" }: { className?: string }) {
       }
       uniforms.uTime.value = t;
 
-      // intro colour beat: blue → yellow, then hand off to the random hue cycle
-      colC.copy(LOGO_BLUE).lerp(INTRO_YELLOW, ss((introColT - 1.6) / 0.7)); // blue, then yellow by ~2.3s
-      // random hue cycle (hold, then crossfade)
+      // cycle endpoints (current → next) + crawl progress; the shader sweeps the new
+      // colour out from the centre, so we hand BOTH colours to the GPU, not a blend.
       const ci = Math.floor(t / COLOR_EVERY), cf = t / COLOR_EVERY - ci;
-      colA.copy(CYCLE[ci % CYCLE.length]); colB.copy(CYCLE[(ci + 1) % CYCLE.length]);
-      colD.copy(colA).lerp(colB, ss((cf - 0.8) / 0.2));
-      // hand off intro → cycle after the yellow beat, then bias to brand blue as the logo forms
-      const handoff = ss((introColT - 3.2) / 1.0);
-      (uniforms.uColor.value as THREE.Color).copy(colC).lerp(colD, handoff).lerp(LOGO_BLUE, scrollForm);
-      uniforms.uBright.value = 2.4 - 1.0 * scrollForm; // ease brightness down so the logo blue stays saturated
+      colA.copy(CYCLE[ci % CYCLE.length]);                 // current
+      colB.copy(CYCLE[(ci + 1) % CYCLE.length]);           // next
+      let mix = ss((cf - 0.82) / 0.15);                    // fast crawl in the last ~1.5s of each beat
+      // intro beat: blue → yellow, hold, then hand off to the cycle (no crawl during intro)
+      colC.copy(LOGO_BLUE).lerp(INTRO_YELLOW, ss((introColT - 1.6) / 0.7));
+      const introBlend = 1 - ss((introColT - 3.2) / 1.0); // 1 during intro → 0 after handoff
+      if (introBlend > 0.001) { colA.lerp(colC, introBlend); colB.lerp(colC, introBlend); mix *= 1 - introBlend; }
+      // scroll-formed logo → brand blue (both ends, so the crawl resolves to a clean blue)
+      colA.lerp(LOGO_BLUE, scrollForm); colB.lerp(LOGO_BLUE, scrollForm);
+      (uniforms.uColorA.value as THREE.Color).copy(colA);
+      (uniforms.uColorB.value as THREE.Color).copy(colB);
+      uniforms.uColorMix.value = mix;
+      uniforms.uBright.value = 3.0 - 1.4 * scrollForm;     // ease brightness down so the logo blue stays saturated
 
       if (points) {
         points.rotation.y = rotY; points.rotation.x = rotX;
@@ -339,6 +377,7 @@ export function ParticleLogo({ className = "" }: { className?: string }) {
       geo.setAttribute("aSquare", new THREE.BufferAttribute(square, 3));
       geo.setAttribute("aTri", new THREE.BufferAttribute(tri, 3));
       geo.setAttribute("aPhase", new THREE.BufferAttribute(aPhase, 1));
+      geo.setAttribute("aBright", new THREE.BufferAttribute(aBright, 1));
       points = new THREE.Points(geo, mat);
       points.frustumCulled = false;
       points.scale.setScalar(0.05);
