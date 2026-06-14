@@ -21,12 +21,26 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
+// lucide dropped brand icons, so inline a small SVG glyph for Instagram.
+type IconProps = { className?: string };
+const InstagramIcon = ({ className }: IconProps) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <rect x="2" y="2" width="20" height="20" rx="5.5" />
+    <circle cx="12" cy="12" r="4" />
+    <circle cx="17.6" cy="6.4" r="1.1" fill="currentColor" stroke="none" />
+  </svg>
+);
+
 const links = [
   { href: "/services", label: "שירותים" },
   { href: "/work", label: "פרויקטים" },
   { href: "/insights", label: "תובנות" },
   { href: "/playground", label: "פלייגראונד" },
   { href: "/about", label: "אודותינו" },
+];
+
+const socials = [
+  { Icon: InstagramIcon, href: "https://www.instagram.com/clix_solution/", label: "Instagram" },
 ];
 
 const ICONS: Record<string, LucideIcon> = {
@@ -38,47 +52,26 @@ const ICONS: Record<string, LucideIcon> = {
   GraduationCap,
 };
 
+/**
+ * Nav — the global Gemini-style navbar (promoted from the /lab/nav experiment).
+ * A solid deep-plum bar that sits over every page: brand on the right (RTL),
+ * white text links centred with an industries dropdown, social icon + brand CTA
+ * on the left. Solid everywhere — the same dark treatment over the dark home
+ * hero and the light interior pages alike (Google-Sans-like Heebo via
+ * --font-google-sans).
+ */
 export function Nav() {
   const pathname = usePathname();
-  const [scrolled, setScrolled] = useState(false);
-  // The home page floats the nav over the dark video hero, so the dark wordmark
-  // needs to be painted light there. Initialise from the path to avoid a
-  // first-paint flash of the invisible dark logo.
-  const [logoLight, setLogoLight] = useState(pathname === "/");
   const [open, setOpen] = useState(false);
-  const [hoveredHref, setHoveredHref] = useState<string | null>(null);
   const [industriesOpen, setIndustriesOpen] = useState(false);
   const [mobileIndustries, setMobileIndustries] = useState(false);
   const closeTimer = useRef<number | undefined>(undefined);
 
-  useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 12);
-    onScroll();
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
-  }, []);
-
-  // Keep the logo light while the dark hero sits behind the nav (home only),
-  // and swap to the dark mark once the light page scrolls up under it. The
-  // hero is clamp(640px, 100svh, 960px) tall; flip ~130px before its bottom so
-  // the change lands as the light fade passes under the nav.
-  useEffect(() => {
-    if (pathname !== "/") {
-      setLogoLight(false);
-      return;
-    }
-    const onScroll = () => {
-      const heroH = Math.min(Math.max(window.innerHeight, 640), 960);
-      setLogoLight(window.scrollY < heroH - 130);
-    };
-    onScroll();
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
-  }, [pathname]);
-
+  // Close any open menus when the route changes.
   useEffect(() => {
     setOpen(false);
     setIndustriesOpen(false);
+    setMobileIndustries(false);
   }, [pathname]);
 
   const openMenu = () => {
@@ -91,120 +84,57 @@ export function Nav() {
 
   const industriesActive = pathname.startsWith("/industries");
 
-  // Lab nav preview owns its own navbar — hide this one there so they don't stack.
+  // The /lab/nav preview owns its own NavLab — hide this one there so they
+  // don't stack (kept for the live preview route; the design is now identical).
   if (pathname.startsWith("/lab/nav")) return null;
 
-  /* A single capsule link with the shared active/hover pill treatment. */
+  /* A single centred text link with the active/hover white treatment. */
   const renderLink = (l: { href: string; label: string }) => {
     const active = pathname === l.href || pathname.startsWith(l.href + "/");
-    const showHoverPill = hoveredHref === l.href && !active;
     return (
       <Link
         key={l.href}
         href={l.href}
-        onMouseEnter={() => setHoveredHref(l.href)}
-        className="relative px-4 py-1.5 text-sm transition-colors"
+        className={`text-sm font-medium transition-colors ${
+          active ? "text-white" : "text-white/70 hover:text-white"
+        }`}
       >
-        {active && (
-          <motion.span
-            layoutId="nav-active-pill"
-            aria-hidden
-            className="absolute inset-0 rounded-full"
-            style={{
-              background: "color-mix(in srgb, var(--accent) 14%, transparent)",
-              border: "1px solid color-mix(in srgb, var(--accent) 32%, transparent)",
-            }}
-            transition={{ type: "spring", stiffness: 380, damping: 34 }}
-          />
-        )}
-        {showHoverPill && (
-          <motion.span
-            layoutId="nav-hover-pill"
-            aria-hidden
-            className="absolute inset-0 rounded-full"
-            style={{ background: "color-mix(in srgb, var(--accent) 8%, transparent)" }}
-            transition={{ type: "spring", stiffness: 380, damping: 34 }}
-          />
-        )}
-        <span
-          className={`relative z-10 transition-colors ${
-            active ? "text-foreground font-medium" : "text-foreground/75 hover:text-foreground"
-          }`}
-        >
-          {l.label}
-        </span>
+        {l.label}
       </Link>
     );
   };
 
   return (
-    <header className="fixed top-0 left-0 right-0 z-50 pointer-events-none">
-      <div
-        className={`mx-auto max-w-[1400px] px-4 md:px-6 lg:px-10 flex items-center justify-between transition-all duration-500 ${
-          scrolled ? "pt-3 md:pt-4" : "pt-5 md:pt-6"
-        }`}
-      >
-        {/* Left — logo. Painted light over the dark hero, dark otherwise. */}
-        <div className="pointer-events-auto">
-          <Logo
-            size={38}
-            className={`transition-colors duration-300 ${
-              logoLight ? "text-on-dark" : "text-foreground"
-            }`}
-          />
-        </div>
+    <header
+      style={{ fontFamily: "var(--font-google-sans)" }}
+      className="fixed inset-x-0 top-0 z-50 border-b border-white/10 bg-[#0b0712]"
+    >
+      <div className="mx-auto flex max-w-[1400px] items-center justify-between px-5 py-3 lg:px-10">
+        {/* Brand — right edge in RTL (Logo renders its own home link) */}
+        <Logo size={34} className="text-on-dark" />
 
-        {/* Center — floating capsule with nav links + industries dropdown */}
+        {/* Centre — white text links + industries dropdown */}
         <nav
-          className="pointer-events-auto hidden md:flex items-center gap-0.5 relative rounded-full px-2 py-1.5 bg-paper/85 backdrop-blur-md border border-line/70 shadow-[0_10px_30px_-12px_rgba(31,20,41,0.18),inset_0_1px_0_0_rgba(255,255,255,0.5)]"
-          onMouseLeave={() => setHoveredHref(null)}
+          className="hidden items-center gap-7 md:flex"
+          style={{ fontFamily: "var(--font-google-sans)" }}
         >
           {renderLink(links[0])}
 
-          {/* תעשיות dropdown trigger + panel */}
+          {/* תעשיות dropdown */}
           <div className="relative" onMouseEnter={openMenu} onMouseLeave={closeMenu}>
             <Link
               href="/industries"
-              onMouseEnter={() => setHoveredHref("/industries")}
-              className="relative flex items-center gap-1 px-4 py-1.5 text-sm transition-colors"
+              className={`flex items-center gap-1 text-sm font-medium transition-colors ${
+                industriesActive ? "text-white" : "text-white/70 hover:text-white"
+              }`}
             >
-              {industriesActive && (
-                <motion.span
-                  layoutId="nav-active-pill"
-                  aria-hidden
-                  className="absolute inset-0 rounded-full"
-                  style={{
-                    background: "color-mix(in srgb, var(--accent) 14%, transparent)",
-                    border: "1px solid color-mix(in srgb, var(--accent) 32%, transparent)",
-                  }}
-                  transition={{ type: "spring", stiffness: 380, damping: 34 }}
-                />
-              )}
-              {hoveredHref === "/industries" && !industriesActive && (
-                <motion.span
-                  layoutId="nav-hover-pill"
-                  aria-hidden
-                  className="absolute inset-0 rounded-full"
-                  style={{ background: "color-mix(in srgb, var(--accent) 8%, transparent)" }}
-                  transition={{ type: "spring", stiffness: 380, damping: 34 }}
-                />
-              )}
-              <span
-                className={`relative z-10 transition-colors ${
-                  industriesActive
-                    ? "text-foreground font-medium"
-                    : "text-foreground/75 hover:text-foreground"
-                }`}
-              >
-                תעשיות
-              </span>
+              תעשיות
               <ChevronDown
-                className={`relative z-10 h-3.5 w-3.5 text-foreground/55 transition-transform duration-300 ${
+                className={`h-3.5 w-3.5 transition-transform duration-300 ${
                   industriesOpen ? "rotate-180" : ""
                 }`}
               />
             </Link>
-
             <AnimatePresence>
               {industriesOpen && (
                 <motion.div
@@ -212,12 +142,12 @@ export function Nav() {
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: 6 }}
                   transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
-                  className="absolute top-full left-1/2 z-50 -translate-x-1/2 pt-3"
+                  className="absolute right-1/2 top-full translate-x-1/2 pt-4"
                   onMouseEnter={openMenu}
                   onMouseLeave={closeMenu}
                 >
-                  <div className="w-[340px] rounded-2xl border border-line bg-paper/95 p-2.5 backdrop-blur-md shadow-[0_24px_50px_-20px_rgba(31,20,41,0.28)]">
-                    <div className="px-3 pb-1.5 pt-2 text-[10.5px] font-mono uppercase tracking-[0.18em] text-foreground/45">
+                  <div className="w-[340px] rounded-2xl border border-white/10 bg-[#140b1c]/95 p-2.5 shadow-[0_24px_50px_-20px_rgba(0,0,0,0.6)] backdrop-blur-xl">
+                    <div className="px-3 pb-1.5 pt-2 text-[10.5px] font-mono uppercase tracking-[0.18em] text-on-dark/45">
                       תעשיות שאנחנו בונים בהן
                     </div>
                     <div className="grid gap-0.5">
@@ -227,7 +157,7 @@ export function Nav() {
                           <Link
                             key={ind.slug}
                             href={`/industries/${ind.slug}`}
-                            className="group flex items-center gap-3 rounded-xl px-3 py-2 transition-colors hover:bg-accent/10"
+                            className="group flex items-center gap-3 rounded-xl px-3 py-2 transition-colors hover:bg-white/10"
                           >
                             <IndustryIcon
                               Icon={Icon}
@@ -235,10 +165,10 @@ export function Nav() {
                               className="transition-transform duration-300 group-hover:scale-110"
                             />
                             <span className="min-w-0">
-                              <span className="block text-[13.5px] font-medium text-foreground">
+                              <span className="block text-[13.5px] font-medium text-on-dark">
                                 {ind.name}
                               </span>
-                              <span className="block truncate text-[12px] text-foreground/55">
+                              <span className="block truncate text-[12px] text-on-dark/55">
                                 {ind.verb}
                               </span>
                             </span>
@@ -248,7 +178,7 @@ export function Nav() {
                     </div>
                     <Link
                       href="/industries"
-                      className="mt-1 flex items-center justify-between rounded-xl px-3 py-2.5 text-[13px] font-medium text-accent transition-colors hover:bg-accent/10"
+                      className="mt-1 flex items-center justify-between rounded-xl px-3 py-2.5 text-[13px] font-medium text-accent transition-colors hover:bg-white/10"
                     >
                       כל התעשיות
                       <ChevronLeft className="h-4 w-4" strokeWidth={2.25} />
@@ -262,29 +192,35 @@ export function Nav() {
           {links.slice(1).map(renderLink)}
         </nav>
 
-        {/* Right — CTA pill + mobile menu */}
-        <div className="pointer-events-auto flex items-center gap-3">
+        {/* Left cluster — social icons + brand CTA + mobile hamburger */}
+        <div className="flex items-center gap-2">
+          <div className="hidden items-center gap-0.5 md:flex">
+            {socials.map(({ Icon, href, label }) => (
+              <a
+                key={label}
+                href={href}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={label}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full text-on-dark/70 transition-colors hover:bg-white/10 hover:text-on-dark"
+              >
+                <Icon className="h-[18px] w-[18px]" />
+              </a>
+            ))}
+          </div>
+
           <Link
             href="/contact"
-            className="btn-shine btn-violet group hidden md:inline-flex items-center gap-2 text-sm ps-4 pe-1.5 py-1.5 rounded-full font-medium"
+            className="btn-shine btn-violet hidden items-center rounded-full px-5 py-2.5 text-sm font-medium text-on-dark transition-transform duration-300 hover:-translate-y-0.5 md:inline-flex"
           >
             בואו נתחיל
-            <span className="inline-flex w-6 h-6 rounded-full bg-ink/30 text-paper items-center justify-center backdrop-blur-sm transition-transform duration-300 group-hover:-translate-y-0.5 group-hover:translate-x-0.5 rtl:group-hover:-translate-x-0.5">
-              <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-                <path
-                  d="M1 9L9 1M9 1H3M9 1V7"
-                  stroke="currentColor"
-                  strokeWidth="1.75"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </span>
           </Link>
+
+          {/* Mobile hamburger */}
           <button
             aria-label="פתיחת תפריט"
             onClick={() => setOpen((o) => !o)}
-            className="md:hidden inline-flex items-center justify-center w-10 h-10 rounded-full bg-paper/85 backdrop-blur-md border border-line/70 shadow-[0_8px_24px_-12px_rgba(31,20,41,0.18)] transition-colors hover:bg-accent/10"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-white/5 text-on-dark backdrop-blur-sm md:hidden"
           >
             <AnimatePresence mode="wait" initial={false}>
               {open ? (
@@ -322,25 +258,26 @@ export function Nav() {
             initial={{ opacity: 0, y: -8 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
-            className="pointer-events-auto md:hidden mt-3 mx-4 rounded-2xl bg-paper/95 backdrop-blur-md border border-line shadow-[0_18px_40px_-16px_rgba(31,20,41,0.25)]"
+            transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
+            className="mx-4 mt-2 rounded-2xl border border-white/10 bg-[#140b1c]/95 p-5 backdrop-blur-xl md:hidden"
           >
-            <div className="px-6 py-5 flex flex-col gap-1">
-              {/* שירותים */}
-              <MobileLink href="/services" label="שירותים" pathname={pathname} delay={0.05} />
+            <div className="flex flex-col gap-1">
+              <Link href="/services" className="py-2 text-lg text-white hover:text-white/70">
+                שירותים
+              </Link>
 
               {/* תעשיות collapsible accordion */}
               <div>
                 <button
                   onClick={() => setMobileIndustries((v) => !v)}
                   aria-expanded={mobileIndustries}
-                  className={`flex w-full items-center justify-between py-2.5 text-lg transition-colors ${
-                    industriesActive ? "text-accent font-medium" : "text-foreground hover:text-accent"
+                  className={`flex w-full items-center justify-between py-2 text-lg transition-colors ${
+                    industriesActive ? "text-accent" : "text-white hover:text-white/70"
                   }`}
                 >
                   תעשיות
                   <ChevronDown
-                    className={`h-5 w-5 text-foreground/50 transition-transform duration-300 ${
+                    className={`h-5 w-5 text-white/50 transition-transform duration-300 ${
                       mobileIndustries ? "rotate-180" : ""
                     }`}
                   />
@@ -354,12 +291,12 @@ export function Nav() {
                       transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
                       className="overflow-hidden"
                     >
-                      <div className="flex flex-col gap-0.5 border-r-2 border-accent/25 pr-3 pb-1">
+                      <div className="flex flex-col gap-0.5 border-r-2 border-accent/30 pr-3 pb-1">
                         {industries.map((ind) => (
                           <Link
                             key={ind.slug}
                             href={`/industries/${ind.slug}`}
-                            className="py-1.5 text-[15px] text-foreground/75 transition-colors hover:text-accent"
+                            className="py-1.5 text-[15px] text-on-dark/75 transition-colors hover:text-on-dark"
                           >
                             {ind.name}
                           </Link>
@@ -370,14 +307,34 @@ export function Nav() {
                 </AnimatePresence>
               </div>
 
-              {/* פרויקטים + תובנות + אודותינו */}
-              <MobileLink href="/work" label="פרויקטים" pathname={pathname} delay={0.1} />
-              <MobileLink href="/insights" label="תובנות" pathname={pathname} delay={0.13} />
-              <MobileLink href="/about" label="אודותינו" pathname={pathname} delay={0.16} />
+              {links.slice(1).map((l) => (
+                <Link
+                  key={l.href}
+                  href={l.href}
+                  className="py-2 text-lg text-white hover:text-white/70"
+                >
+                  {l.label}
+                </Link>
+              ))}
+
+              <div className="mt-3 flex items-center gap-1">
+                {socials.map(({ Icon, href, label }) => (
+                  <a
+                    key={label}
+                    href={href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label={label}
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-full text-on-dark/70 hover:bg-white/10 hover:text-on-dark"
+                  >
+                    <Icon className="h-[18px] w-[18px]" />
+                  </a>
+                ))}
+              </div>
 
               <Link
                 href="/contact"
-                className="btn-violet mt-3 inline-flex items-center justify-center gap-2 py-3 px-6 rounded-full font-medium w-full"
+                className="btn-violet mt-3 inline-flex items-center justify-center rounded-full px-5 py-3 text-sm font-medium text-on-dark"
               >
                 בואו נתחיל
               </Link>
@@ -386,36 +343,5 @@ export function Nav() {
         )}
       </AnimatePresence>
     </header>
-  );
-}
-
-/* Mobile sheet link with entrance + active state. */
-function MobileLink({
-  href,
-  label,
-  pathname,
-  delay,
-}: {
-  href: string;
-  label: string;
-  pathname: string;
-  delay: number;
-}) {
-  const active = pathname === href || pathname.startsWith(href + "/");
-  return (
-    <motion.div
-      initial={{ opacity: 0, x: -8 }}
-      animate={{ opacity: 1, x: 0 }}
-      transition={{ duration: 0.3, delay, ease: [0.22, 1, 0.36, 1] }}
-    >
-      <Link
-        href={href}
-        className={`block py-2.5 text-lg transition-colors ${
-          active ? "text-accent font-medium" : "text-foreground hover:text-accent"
-        }`}
-      >
-        {label}
-      </Link>
-    </motion.div>
   );
 }

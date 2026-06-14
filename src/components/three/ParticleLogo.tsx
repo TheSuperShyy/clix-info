@@ -21,6 +21,7 @@ const VERT = `
   uniform float uMorph;
   uniform float uFlowAmp;
   uniform float uScrollForm;
+  uniform float uGather;
   uniform float uRadNorm;
   uniform int uShapeA;
   uniform int uShapeB;
@@ -40,7 +41,13 @@ const VERT = `
   }
   void main() {
     vec3 cyclePos = mix(shapeAt(uShapeA), shapeAt(uShapeB), uMorph);
-    vec3 base = mix(cyclePos, aLogo, uScrollForm);   // scroll down → Clix logo
+    // scroll down → Clix logo, but COMPRESS-THEN-FORM: gather toward the centre at
+    // mid-transition, then resolve outward into the logo. Particles take a short,
+    // calm path instead of flinging straight across the screen (less peak velocity).
+    float sf = uScrollForm;
+    float gather = sin(sf * 3.14159265);             // 0 → 1 → 0 across the transition
+    vec3 compact = cyclePos * (1.0 - uGather * gather);
+    vec3 base = mix(compact, aLogo, sf);
     vRad = clamp(length(base.xy) / uRadNorm, 0.0, 1.0); // 0 centre → 1 edge (drives the colour crawl)
     // structural brightness: the outer rim / corners hit FULL brightness, fading
     // toward the centre. (radial gradient survives additive blending; random doesn't.)
@@ -141,6 +148,7 @@ export function ParticleLogo({ className = "" }: { className?: string }) {
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const isMobile = window.matchMedia("(max-width: 768px), (pointer: coarse)").matches;
     const MIN_DT = isMobile ? 1 / 30 : 0; // cap mobile redraw to ~30fps (halves GPU fill on capable devices)
+    const SCROLL_DT = isMobile ? 1 / 20 : 1 / 30; // while actively scrolling, throttle harder (field is in motion + partly covered → extra frames are imperceptible, and it frees the GPU so Lenis doesn't starve/freeze)
     const N = isMobile ? 15000 : 78000;   // dense HD grain (small, sharp dots — fill ∝ size²)
     const WORLD = isMobile ? 20 : 28;      // mark size on mobile
     const S = isMobile ? 0.72 : 1;         // shape size on mobile — fills the portrait frame
@@ -195,7 +203,7 @@ export function ParticleLogo({ className = "" }: { className?: string }) {
       const t = new THREE.Texture(cv); t.needsUpdate = true; return t;
     };
 
-    const pr = Math.min(window.devicePixelRatio || 1, isMobile ? 1.25 : 1.5); // mobile a touch lower (fill ∝ DPR²), still crisp
+    const pr = Math.min(window.devicePixelRatio || 1, isMobile ? 1.1 : 1.5); // mobile lower (fill ∝ DPR² — biggest lever), glowing dots stay crisp enough
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: !isMobile, powerPreference: "high-performance" }); // no MSAA on mobile
     renderer.setPixelRatio(pr);
     const size = () => { const r = canvas.getBoundingClientRect(); return { w: r.width || window.innerWidth, h: r.height || window.innerHeight }; };
@@ -206,7 +214,7 @@ export function ParticleLogo({ className = "" }: { className?: string }) {
     const uniforms = {
       uTime: { value: 0 }, uScale: { value: h * 0.5 }, uSize: { value: 0.28 * pr },
       uMorph: { value: 0 }, uShapeA: { value: 0 }, uShapeB: { value: 0 }, uFlowAmp: { value: 0.18 },
-      uScrollForm: { value: 0 }, uOpacity: { value: 1.0 }, uBright: { value: 3.4 }, uMap: { value: sprite() },
+      uScrollForm: { value: 0 }, uGather: { value: 0.55 }, uOpacity: { value: 1.0 }, uBright: { value: 3.4 }, uMap: { value: sprite() },
       uColorA: { value: LOGO_BLUE.clone() }, uColorB: { value: LOGO_BLUE.clone() }, uColorMix: { value: 0 },
       uPulseAmt: { value: 1.0 }, uRadNorm: { value: 17 * S },
     };
@@ -214,7 +222,7 @@ export function ParticleLogo({ className = "" }: { className?: string }) {
 
     const dustGeo = new THREE.BufferGeometry();
     {
-      const dn = isMobile ? 16000 : 46000;
+      const dn = isMobile ? 9000 : 46000; // fewer ambient dust on phones — background fill, biggest overdraw saving with least visible loss
       const dpos = new Float32Array(dn * 3), dseed = new Float32Array(dn);
       for (let i = 0; i < dn; i++) {
         const sel = Math.random();
@@ -319,7 +327,7 @@ export function ParticleLogo({ className = "" }: { className?: string }) {
 
     let geo: THREE.BufferGeometry | null = null, points: THREE.Points | null = null;
 
-    let raf = 0, lastT = performance.now() / 1000, lastInteract = -100;
+    let raf = 0, lastT = performance.now() / 1000, lastInteract = -100, lastScrollY = window.scrollY;
     let introStage = 0, introT = 0, cycleT = 0, scrollForm = 0, clockT = 0, bootT = 0, introColT = 0, dustFade = 0;   // 0 reveal, 2 cycle+loop
     let dragging = false, dpx = 0, dpy = 0, rotY = 0, rotX = 0, tRotY = 0, tRotX = 0, velY = 0, velX = 0;
     const REVEAL = 1.5, CLOCK_STEP = 10.0, CLOCK_A = 1.0, STAGE = 22, HOLD = 6.0, CLOCK_CRAWL = 1.0;
@@ -340,15 +348,27 @@ export function ParticleLogo({ className = "" }: { className?: string }) {
     function frame(now: number) {
       raf = requestAnimationFrame(frame);
       now /= 1000;
-      if (now - lastT < MIN_DT) return;                 // ~32fps cap on mobile (MIN_DT = 0 on desktop)
+      // Scroll-aware throttle: detect motion by frame-to-frame scroll delta. While
+      // scrolling, the field is moving (and the rising content is covering it), so a
+      // lower framerate is invisible — but it frees the GPU/main thread and stops the
+      // Lenis scroll-freeze. Full framerate resumes the instant scrolling settles.
+      const sy = window.scrollY;
+      const moving = Math.abs(sy - lastScrollY) > 0.5;
+      lastScrollY = sy;
+      const minDt = moving ? Math.max(MIN_DT, SCROLL_DT) : MIN_DT;
+      if (now - lastT < minDt) return;
       const t = now, dt = Math.min(0.05, t - lastT); lastT = t;
-      if (window.scrollY > window.innerHeight * 1.05) return;
+      if (sy > window.innerHeight * 1.05) return;
       dustUniforms.uTime.value = t;                     // animate the ambient outward drift
 
-      // scroll down → Clix logo
-      const sfTarget = Math.min(1, window.scrollY / (window.innerHeight * 0.40));
+      // scroll down → Clix logo. Form over MORE scroll distance (0.40 → 0.62 vh) so
+      // the transition is slower/gentler — lower per-frame particle velocity.
+      const sfTarget = Math.min(1, window.scrollY / (window.innerHeight * 0.62));
       scrollForm += (sfTarget - scrollForm) * 0.08;
       uniforms.uScrollForm.value = scrollForm;
+      // damp the live flow jitter as the logo forms → the mark settles steadily
+      // (full flow when idle at the top, calm when scrolled into the logo).
+      uniforms.uFlowAmp.value = 0.18 * (1 - 0.7 * scrollForm);
 
       // hold the mark fully HIDDEN until the hero text + buttons have rendered
       // (don't collapse to scale 0 — that stacks every particle into one bright dot)
@@ -363,7 +383,10 @@ export function ParticleLogo({ className = "" }: { className?: string }) {
       if (points && !points.visible) points.visible = true;
       dustPoints.visible = true;
       dustFade += (1 - dustFade) * 0.03;              // fade the ambient in alongside the shape reveal
-      dustUniforms.uDustOpacity.value = DUST_OPACITY * dustFade;
+      // also fade the ambient OUT as the logo forms on scroll — it's background fill
+      // (46k sprites) that the rising content covers anyway, so cutting it here removes
+      // a big chunk of overdraw exactly during the scroll window. Reverses on scroll-up.
+      dustUniforms.uDustOpacity.value = DUST_OPACITY * dustFade * (1 - 0.8 * scrollForm);
       introColT += dt; // drives the blue → yellow → cycle intro colour beat
 
       if (introStage === 0) {
