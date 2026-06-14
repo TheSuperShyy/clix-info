@@ -203,7 +203,7 @@ export function ParticleLogo({ className = "" }: { className?: string }) {
       const t = new THREE.Texture(cv); t.needsUpdate = true; return t;
     };
 
-    const pr = Math.min(window.devicePixelRatio || 1, isMobile ? 1.1 : 1.5); // mobile lower (fill ∝ DPR² — biggest lever), glowing dots stay crisp enough
+    const pr = Math.min(window.devicePixelRatio || 1, isMobile ? 1.5 : 1.5); // render near-native so the field is sharp, not upscaled/blurry (fill ∝ DPR², but the scroll throttle + dust-fade buy the headroom)
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: !isMobile, powerPreference: "high-performance" }); // no MSAA on mobile
     renderer.setPixelRatio(pr);
     const size = () => { const r = canvas.getBoundingClientRect(); return { w: r.width || window.innerWidth, h: r.height || window.innerHeight }; };
@@ -214,7 +214,7 @@ export function ParticleLogo({ className = "" }: { className?: string }) {
     const uniforms = {
       uTime: { value: 0 }, uScale: { value: h * 0.5 }, uSize: { value: 0.28 * pr },
       uMorph: { value: 0 }, uShapeA: { value: 0 }, uShapeB: { value: 0 }, uFlowAmp: { value: 0.18 },
-      uScrollForm: { value: 0 }, uGather: { value: 0.55 }, uOpacity: { value: 1.0 }, uBright: { value: 3.4 }, uMap: { value: sprite() },
+      uScrollForm: { value: 0 }, uGather: { value: 0.28 }, uOpacity: { value: 1.0 }, uBright: { value: 3.4 }, uMap: { value: sprite() },
       uColorA: { value: LOGO_BLUE.clone() }, uColorB: { value: LOGO_BLUE.clone() }, uColorMix: { value: 0 },
       uPulseAmt: { value: 1.0 }, uRadNorm: { value: 17 * S },
     };
@@ -222,7 +222,7 @@ export function ParticleLogo({ className = "" }: { className?: string }) {
 
     const dustGeo = new THREE.BufferGeometry();
     {
-      const dn = isMobile ? 9000 : 46000; // fewer ambient dust on phones — background fill, biggest overdraw saving with least visible loss
+      const dn = isMobile ? 7000 : 46000; // fewer ambient dust on phones — background fill, trimmed to offset the higher DPR (least visible loss)
       const dpos = new Float32Array(dn * 3), dseed = new Float32Array(dn);
       for (let i = 0; i < dn; i++) {
         const sel = Math.random();
@@ -361,10 +361,10 @@ export function ParticleLogo({ className = "" }: { className?: string }) {
       if (sy > window.innerHeight * 1.05) return;
       dustUniforms.uTime.value = t;                     // animate the ambient outward drift
 
-      // scroll down → Clix logo. Form over MORE scroll distance (0.40 → 0.62 vh) so
-      // the transition is slower/gentler — lower per-frame particle velocity.
-      const sfTarget = Math.min(1, window.scrollY / (window.innerHeight * 0.62));
-      scrollForm += (sfTarget - scrollForm) * 0.08;
+      // scroll down → Clix logo. Form decisively over ~0.45 vh of scroll, with a
+      // snappy catch-up so the mark locks into the logo (not a lingering blob).
+      const sfTarget = Math.min(1, window.scrollY / (window.innerHeight * 0.45));
+      scrollForm += (sfTarget - scrollForm) * 0.13;
       uniforms.uScrollForm.value = scrollForm;
       // damp the live flow jitter as the logo forms → the mark settles steadily
       // (full flow when idle at the top, calm when scrolled into the logo).
